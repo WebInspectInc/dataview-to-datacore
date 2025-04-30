@@ -11,7 +11,6 @@ document.addEventListener('DOMContentLoaded', () => {
         'SORT': 'ORDER BY',
         'GROUP BY': 'GROUP BY',
         'FLATTEN': 'FLATTEN',
-        'LIST': 'return <dc.List rows={pages} renderer={pages => pages.$link} />;',
         
         // Field patterns
         'file.name': 'file.name',
@@ -39,6 +38,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const returnRules = {
         'LIST': 'return <dc.List rows={pages} renderer={pages => pages.$link} />;',
+        // 'TABLE': 'return <dc.Table rows={pages} />;'
     }
 
     function convertDataviewToDatacore(input) {
@@ -52,7 +52,7 @@ document.addEventListener('DOMContentLoaded', () => {
             return `const pages = dc.useQuery("${group1.trim()}");`;
         });
 
-        // Check for LIST command
+        // Check for return commands
         for (const [match, returnRule] of Object.entries(returnRules)) {
             const listRegex = new RegExp(match, 'gi');
             if (listRegex.test(output)) {
@@ -64,7 +64,7 @@ document.addEventListener('DOMContentLoaded', () => {
         
         // Then handle other conversion rules
         for (const [dataview, datacore] of Object.entries(conversionRules)) {
-            if (dataview.startsWith('FROM') || dataview === 'LIST') continue; // Skip FROM and LIST as we handled them above
+            if (dataview.startsWith('FROM')) continue; // Skip FROM as we handled it above
             
             const regex = new RegExp(dataview, 'gi');
             output = output.replace(regex, (match, group1) => {
@@ -81,24 +81,22 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // If we have a return statement, wrap everything in a function
         if (hasReturnCommand) {
-            // Find the last occurrence of the closing code block
-            const lastCodeBlockIndex = output.lastIndexOf('```');
-            if (lastCodeBlockIndex !== -1) {
-                // Get the content between code blocks
-                const content = output.slice(output.indexOf('```') + 3, lastCodeBlockIndex).trim();
-                // Wrap the content in a function
-                output = output.slice(0, output.indexOf('```')) + 
-                         '```datacorejsx\n' +
+            // Check if we have code fences
+            const hasCodeFences = output.includes('```');
+            if (hasCodeFences) {
+                // Extract the content between the fences
+                const content = output.replace(/```.*?\n|\n```/g, '').trim();
+                output = '```datacorejsx\n' +
                          'return function View() {\n' +
                          content + '\n' +
                          append + '\n' +
                          '}\n' +
                          '```';
             } else {
-                // If no code block markers found, just wrap the content
+                // If no code fences, just wrap the content
                 output = 'return function View() {\n' + 
                          output + '\n' +
-                         'return <dc.List rows={pages} renderer={pages => pages.$link} />;\n' +
+                         append + '\n' +
                          '}';
             }
         }
