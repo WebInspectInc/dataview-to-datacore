@@ -6,7 +6,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // Conversion rules
     const conversionRules = {
         // Basic query patterns
-        'FROM (.*?)$': 'const pages = dc.useQuery("@page and $1");',
+        'FROM (.*?)$': "const pages = dc.useQuery('@page and $1');",
         'WHERE': 'WHERE',
         'SORT': 'ORDER BY',
         'GROUP BY': 'GROUP BY',
@@ -38,7 +38,20 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const returnRules = {
         'LIST': 'return <dc.List rows={pages} renderer={pages => pages.$link} />;',
-        // 'TABLE': 'return <dc.Table rows={pages} />;'
+        'TABLE\\s*(.*?)$': (match, columns) => {
+            // Start with the default File column
+            let columnsArray = ['\t{ name: "File", value: page => page.$link }'];
+            
+            // If additional columns were specified, add them
+            if (columns && columns.trim()) {
+                const additionalColumns = columns.split(',').map(col => col.trim());
+                additionalColumns.forEach(col => {
+                    columnsArray.push(`\t{ name: "${col}", value: page => page.value("${col}") }`);
+                });
+            }
+            
+            return `const columns = [\n${columnsArray.join(',\n')},\n];\nreturn <dc.Table rows={pages} columns={columns} />;`;
+        }
     }
 
     function convertDataviewToDatacore(input) {
@@ -49,16 +62,25 @@ document.addEventListener('DOMContentLoaded', () => {
         // First handle the FROM pattern separately since it's more complex
         const queryRegex = /FROM\s+(.*?)$/gmi;
         output = output.replace(queryRegex, (match, group1) => {
-            return `const pages = dc.useQuery("@page and ${group1.trim()}");`;
+            return `const pages = dc.useQuery('@page and ${group1.trim()}');`;
         });
 
         // Check for return commands
         for (const [match, returnRule] of Object.entries(returnRules)) {
-            const listRegex = new RegExp(match, 'gi');
-            if (listRegex.test(output)) {
+            const regex = new RegExp(match, 'gmi');
+            if (regex.test(output)) {
                 hasReturnCommand = true;
-                output = output.replace(listRegex, '');
-                append = returnRule;
+                if (typeof returnRule === 'function') {
+                    // For TABLE command, use the function to generate the return statement
+                    output = output.replace(regex, (fullMatch, group1) => {
+                        append = returnRule(fullMatch, group1);
+                        return '';
+                    });
+                } else {
+                    // For other commands (like LIST), use the static return statement
+                    output = output.replace(regex, '');
+                    append = returnRule;
+                }
             }
         }
         
@@ -95,8 +117,8 @@ document.addEventListener('DOMContentLoaded', () => {
             } else {
                 // If no code fences, just wrap the content
                 output = 'return function View() {\n' + 
-                         output + '\n' +
-                         append + '\n' +
+                         '	' + output + '\n' +
+                         '	' + append + '\n' +
                          '}';
             }
         }
