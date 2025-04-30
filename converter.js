@@ -38,7 +38,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const returnRules = {
         'LIST': 'return <dc.List rows={pages} renderer={pages => pages.$link} />;',
-        'TABLE\\s*(.*?)$': (match, columns) => {
+        'TABLE\\s*$': () => {
+            return `const columns = [\n\t{ name: "File", value: page => page.$link },\n];\nreturn <dc.Table rows={pages} columns={columns} />;`;
+        },
+        'TABLE\\s+(.*?)$': (match, columns) => {
             // Start with the default File column
             let columnsArray = ['\t{ name: "File", value: page => page.$link }'];
             
@@ -59,13 +62,7 @@ document.addEventListener('DOMContentLoaded', () => {
         let hasReturnCommand = false;
         let append = '';
         
-        // First handle the FROM pattern separately since it's more complex
-        const queryRegex = /FROM\s+(.*?)$/gmi;
-        output = output.replace(queryRegex, (match, group1) => {
-            return `const pages = dc.useQuery('@page and ${group1.trim()}');`;
-        });
-
-        // Check for return commands
+        // First check for return commands
         for (const [match, returnRule] of Object.entries(returnRules)) {
             const regex = new RegExp(match, 'gmi');
             if (regex.test(output)) {
@@ -83,6 +80,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             }
         }
+
+        // Then handle the FROM pattern
+        const queryRegex = /FROM\s+(.*?)$/gmi;
+        output = output.replace(queryRegex, (match, group1) => {
+            return `const pages = dc.useQuery('@page and ${group1.trim()}');`;
+        });
         
         // Then handle other conversion rules
         for (const [dataview, datacore] of Object.entries(conversionRules)) {
