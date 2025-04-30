@@ -3,12 +3,26 @@ document.addEventListener('DOMContentLoaded', () => {
     const datacoreOutput = document.getElementById('datacore-output');
     const convertBtn = document.getElementById('convert-btn');
 
+    const standardFields = [
+        '$file',
+        '$ordinal',
+        '$name',
+        '$path',
+        '$folder',
+        '$link',
+        '$size',
+        '$ctime',
+        '$mtime',
+        '$tags',
+        '$links',
+        '$blocks'
+    ];
+
     // Conversion rules
     const conversionRules = {
         // Basic query patterns
         'FROM (.*?)$': "const pages = dc.useQuery('@page and $1');",
         'WHERE': 'WHERE',
-        'SORT': 'ORDER BY',
         'GROUP BY': 'GROUP BY',
         'FLATTEN': 'FLATTEN',
         
@@ -49,7 +63,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (columns && columns.trim()) {
                 const additionalColumns = columns.split(',').map(col => col.trim());
                 additionalColumns.forEach(col => {
-                    columnsArray.push(`\t{ name: "${col}", value: page => page.value("${col}") }`);
+                    columnsArray.push(`\t{ name: "${col}", value: page => page.` + getdata(col) + ` }`);
                 });
             }
             
@@ -57,12 +71,33 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    function getdata(field) {
+        if (standardFields.includes(field)) {
+            return `${field}`;
+        }
+        return `value("${field}")`;
+    }
+
     function convertDataviewToDatacore(input) {
         let output = input;
         let hasReturnCommand = false;
         let append = '';
+        let sortField = '';
+        let sortDirection = 'asc';
+        let hasSort = false;
         
-        // First check for return commands
+        // First check for SORT command
+        const sortRegex = /SORT\s+(.*?)(?:\s+(asc|desc))?$/gmi;
+        if (sortRegex.test(output)) {
+            hasSort = true;
+            output = output.replace(sortRegex, (match, field, direction) => {
+                sortField = field.trim();
+                if (direction) sortDirection = direction.toLowerCase();
+                return '';
+            });
+        }
+        
+        // Then check for return commands
         for (const [match, returnRule] of Object.entries(returnRules)) {
             const regex = new RegExp(match, 'gmi');
             if (regex.test(output)) {
@@ -71,12 +106,18 @@ document.addEventListener('DOMContentLoaded', () => {
                     // For TABLE command, use the function to generate the return statement
                     output = output.replace(regex, (fullMatch, group1) => {
                         append = returnRule(fullMatch, group1);
+                        if (hasSort) {
+                            append = append.replace(/rows={pages}/g, 'rows={sortedPages}');
+                        }
                         return '';
                     });
                 } else {
                     // For other commands (like LIST), use the static return statement
                     output = output.replace(regex, '');
                     append = returnRule;
+                    if (hasSort) {
+                        append = append.replace(/rows={pages}/g, 'rows={sortedPages}');
+                    }
                 }
             }
         }
@@ -84,7 +125,15 @@ document.addEventListener('DOMContentLoaded', () => {
         // Then handle the FROM pattern
         const queryRegex = /FROM\s+(.*?)$/gmi;
         output = output.replace(queryRegex, (match, group1) => {
-            return `const pages = dc.useQuery('@page and ${group1.trim()}');`;
+            let query = `const pages = dc.useQuery('@page and ${group1.trim()}');`;
+            if (sortField) {
+                // Convert the field name to the correct Datacore format
+                const fieldName = sortField.startsWith('file.') ? sortField.replace('file.', '$') : sortField;
+                const sortFunction = 
+                    `array.sort((a) => a.${getdata(fieldName)}, "${sortDirection}")`;
+                query += `\nconst sortedPages = dc.useArray(pages, array => ${sortFunction});`;
+            }
+            return query;
         });
         
         // Then handle other conversion rules
