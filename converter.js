@@ -6,7 +6,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // Conversion rules
     const conversionRules = {
         // Basic query patterns
-        'FROM (.*?)$': 'const pages = dc.useQuery("$1");',
+        'FROM (.*?)$': 'const pages = dc.useQuery("@page and $1");',
         'WHERE': 'WHERE',
         'SORT': 'ORDER BY',
         'GROUP BY': 'GROUP BY',
@@ -49,7 +49,7 @@ document.addEventListener('DOMContentLoaded', () => {
         // First handle the FROM pattern separately since it's more complex
         const queryRegex = /FROM\s+(.*?)$/gmi;
         output = output.replace(queryRegex, (match, group1) => {
-            return `const pages = dc.useQuery("${group1.trim()}");`;
+            return `const pages = dc.useQuery("@page and ${group1.trim()}");`;
         });
 
         // Check for return commands
@@ -88,8 +88,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 const content = output.replace(/```.*?\n|\n```/g, '').trim();
                 output = '```datacorejsx\n' +
                          'return function View() {\n' +
-                         content + '\n' +
-                         append + '\n' +
+                         '	' + content + '\n' +
+                         '	' + append + '\n' +
                          '}\n' +
                          '```';
             } else {
